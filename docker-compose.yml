@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper.multistage
+      tags:
+        - "crypto_exchange_scraper:latest"
+    image: crypto_exchange_scraper:latest 
+    environment:
+      pgConnectionString: postgres://scraper:awesomepassword@10.0.0.2:5432/scraper
+      TZ: "Asia/Yekaterinburg"
+    container_name: crypto_exchange_scraper
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost/healthcheck || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    networks: 
+      project_default:
+          ipv4_address: 10.0.0.3
+
+  postgres:
+    image: postgres:16.2
+    environment:
+      POSTGRES_DB: "scraper"
+      POSTGRES_USER: "scraper"
+      POSTGRES_PASSWORD: "awesomepassword"
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+      TZ: "Asia/Yekaterinburg"
+    container_name: postgres
+    volumes:
+      - ./pgsql/:/docker-entrypoint-initdb.d
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scraper -d scraper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    networks: 
+      project_default:
+          ipv4_address: 10.0.0.2
+
+  grafana:
+    image: grafana/grafana
+    user: root
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    container_name: grafana
+    hostname: grafana
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 3s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      TZ: "Asia/Yekaterinburg"
+    networks: 
+      project_default:
+          ipv4_address: 10.0.0.4
+
+volumes:
+  postgres-data:
+
+networks:
+  project_default:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.0.0.0/24
+         gateway: 10.0.0.1
